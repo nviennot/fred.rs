@@ -7,16 +7,23 @@ use crate::utils;
 use bytes::Bytes;
 use bytes_utils::Str;
 use float_cmp::approx_eq;
+use nom::AsBytes;
 use redis_protocol::resp2::types::NULL;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::convert::{TryFrom, TryInto};
+use std::fmt::Formatter;
 use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::{fmt, mem, str};
 
+#[cfg(feature = "serde-support")]
+use serde::{
+  de::{self, EnumAccess, Error, MapAccess, SeqAccess, Visitor},
+  Deserialize, Deserializer, Serialize, Serializer,
+};
 #[cfg(feature = "serde-json")]
 use serde_json::Value;
 
@@ -147,7 +154,7 @@ impl From<f64> for StringOrNumber {
 /// A key in Redis.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct RedisKey {
-  key: Bytes,
+  pub(crate) key: Bytes,
 }
 
 impl RedisKey {
@@ -266,7 +273,7 @@ impl TryFrom<RedisValue> for RedisKey {
           RedisErrorKind::InvalidArgument,
           "Cannot convert to key.",
         ))
-      }
+      },
     };
 
     Ok(val)
@@ -365,7 +372,7 @@ impl TryFrom<Value> for RedisKey {
           RedisErrorKind::InvalidArgument,
           "Cannot convert to key from JSON.",
         ))
-      }
+      },
     };
 
     Ok(value)
@@ -565,6 +572,7 @@ impl fmt::Display for RedisValueKind {
 
 /// A value used in a Redis command.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
 pub enum RedisValue {
   /// A boolean value.
   Boolean(bool),
@@ -573,8 +581,10 @@ pub enum RedisValue {
   /// A double floating point number.
   Double(f64),
   /// A string value.
+  #[cfg_attr(feature = "serde-support", serde(with = "serde_bytes"))]
   String(Str),
   /// A value to represent non-UTF8 strings or byte arrays.
+  #[cfg_attr(feature = "serde-support", serde(with = "serde_bytes"))]
   Bytes(Bytes),
   /// A `nil` value.
   Null,
@@ -797,7 +807,7 @@ impl<'a> RedisValue {
         } else {
           None
         }
-      }
+      },
       RedisValue::String(ref s) => s.parse::<u64>().ok(),
       RedisValue::Array(ref inner) => {
         if inner.len() == 1 {
@@ -805,7 +815,7 @@ impl<'a> RedisValue {
         } else {
           None
         }
-      }
+      },
       _ => None,
     }
   }
@@ -821,7 +831,7 @@ impl<'a> RedisValue {
         } else {
           None
         }
-      }
+      },
       _ => None,
     }
   }
@@ -835,7 +845,7 @@ impl<'a> RedisValue {
         } else {
           None
         }
-      }
+      },
       RedisValue::String(ref s) => s.parse::<usize>().ok(),
       RedisValue::Array(ref inner) => {
         if inner.len() == 1 {
@@ -843,7 +853,7 @@ impl<'a> RedisValue {
         } else {
           None
         }
-      }
+      },
       _ => None,
     }
   }
@@ -860,7 +870,7 @@ impl<'a> RedisValue {
         } else {
           None
         }
-      }
+      },
       _ => None,
     }
   }
@@ -880,7 +890,7 @@ impl<'a> RedisValue {
         } else {
           None
         }
-      }
+      },
       _ => None,
     }
   }
@@ -903,7 +913,7 @@ impl<'a> RedisValue {
         } else {
           None
         }
-      }
+      },
       _ => None,
     }
   }
@@ -926,7 +936,7 @@ impl<'a> RedisValue {
         } else {
           None
         }
-      }
+      },
       _ => None,
     }
   }
@@ -1011,7 +1021,7 @@ impl<'a> RedisValue {
         } else {
           None
         }
-      }
+      },
       _ => None,
     }
   }
@@ -1076,7 +1086,7 @@ impl<'a> RedisValue {
           out.push(value);
         }
         out
-      }
+      },
       _ => vec![self],
     }
   }
@@ -1094,7 +1104,7 @@ impl<'a> RedisValue {
         } else {
           return None;
         }
-      }
+      },
       RedisValue::Integer(i) => i.to_string().into_bytes(),
       _ => return None,
     };
@@ -1115,7 +1125,7 @@ impl<'a> RedisValue {
         } else {
           return None;
         }
-      }
+      },
       RedisValue::Integer(i) => i.to_string().into(),
       _ => return None,
     };
@@ -1295,7 +1305,7 @@ impl Hash for RedisValue {
         for value in arr.iter() {
           value.hash(state);
         }
-      }
+      },
       _ => panic!("Cannot hash aggregate value."),
     }
   }
@@ -1534,21 +1544,21 @@ impl TryFrom<Value> for RedisValue {
         } else {
           return Err(RedisError::new(RedisErrorKind::InvalidArgument, "Invalid JSON number."));
         }
-      }
+      },
       Value::Array(a) => {
         let mut out = Vec::with_capacity(a.len());
         for value in a.into_iter() {
           out.push(value.try_into()?);
         }
         RedisValue::Array(out)
-      }
+      },
       Value::Object(m) => {
         let mut out: HashMap<RedisKey, RedisValue> = HashMap::with_capacity(m.len());
         for (key, value) in m.into_iter() {
           out.insert(key.into(), value.try_into()?);
         }
         RedisValue::Map(RedisMap { inner: out })
-      }
+      },
     };
 
     Ok(value)

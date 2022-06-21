@@ -12,6 +12,8 @@ mod lists;
 mod misc;
 mod multiple;
 mod scan;
+#[cfg(feature = "serde-support")]
+mod serde;
 mod sorted_sets;
 mod streams;
 
